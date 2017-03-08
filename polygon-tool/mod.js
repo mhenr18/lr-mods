@@ -1,6 +1,6 @@
-import * as track from 'lr/track'
-import * as ui from 'lr/ui'
-import * as tools from 'lr/tools'
+import track from 'lr/track'
+import ui from 'lr/ui'
+import tools from 'lr/tools'
 import React from 'react'
 
 module.info = {
