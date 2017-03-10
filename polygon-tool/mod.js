@@ -49,19 +49,19 @@ function addCircle (centerX, centerY, arcX, arcY, numSegments) {
   }
 }
 
-async function onCursorDown (x, y) {
-  startX = x
-  startY = y
+async function onCursorDown (e) {
+  startX = e.trackX
+  startY = e.trackY
 
-  onCursorDrag(x, y)
+  onCursorDrag(startX, startY)
 }
 
-async function onCursorDrag (x, y) {
+async function onCursorDrag (e) {
   track.revertChanges()
-  addCircle(startX, startY, x, y, toolUi.state.numSegments)
+  addCircle(startX, startY, e.trackX, e.trackY, toolUi.state.numSegments)
 }
 
-async function onCursorUp (x, y) {
+async function onCursorUp () {
   track.commitChanges()
 }
 
@@ -92,6 +92,7 @@ export default class CircleToolUi extends React.Component {
   }
 
   show () {
+    console.log('showing CircleToolUi')
     this.setState({
       visible: true
     })
