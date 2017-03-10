@@ -11,17 +11,30 @@ module.info = {
 }
 
 let speedoUi = null
+let speedData = null
+let frameTimes = []
 
-async function onPlaybackStart () {
-  speedoUi.show()
+function getTime () {
+  return performance.now() / 1000
 }
 
-async function onPlaybackStop () {
-  speedoUi.hide()
+function getFps () {
+  let currTime = getTime()
+  frameTimes = frameTimes.filter(t => currTime - t < 1.5)
+
+  if (frameTimes.length == 0) {
+    return 0
+  }
+
+  let totalTime = currTime - frameTimes[0]
+  if (totalTime < 0.0001) {
+    totalTime = 0.0001
+  }
+ 
+  return (frameTimes.length - 1) / totalTime
 }
 
-async function onPlaybackFrame (e) {
-  let frame = await track.getFrame(e.frameIndex)
+function getSpeed (frame) {
   let rider = frame.entities[0]
 
   // rider point indexes are 4-9 inclusive.
@@ -37,8 +50,67 @@ async function onPlaybackFrame (e) {
   x /= 6
   y /= 6
 
+  return Math.sqrt(x*x + y*y)
+}
+
+function zeroPad(num, places) {
+  var zero = places - num.toString().length + 1;
+  return Array(+(zero > 0 && zero)).join("0") + num;
+}
+
+function frameIndexToTimecodeString (frameIndex) {
+  frameIndex = Math.round(frameIndex)
+
+  let frames = frameIndex % 40
+  let totalSeconds = frameIndex / 40
+  let seconds = Math.floor(totalSeconds) % 60
+  let totalMinutes = totalSeconds / 60
+  let minutes = Math.floor(totalMinutes) % 60
+  let totalHours = totalMinutes / 60
+  let hours = Math.floor(totalHours)
+
+  let timecodeStr = ''
+
+  if (hours > 0) {
+    timecodeStr += '' + hours + ':'
+  }
+
+  if (hours > 0 || minutes > 0) {
+    if (hours > 0) {
+      timecodeStr += '' + zeroPad(minutes, 2) + ':'
+    } else {
+      timecodeStr += '' + minutes + ':'
+    }
+  }
+
+  if (minutes > 0) {
+    timecodeStr += '' + zeroPad(seconds, 2) + ';'
+  } else {
+    timecodeStr += '' + seconds + ';'
+  }
+
+  timecodeStr += '' + zeroPad(frames, 2)
+  return timecodeStr
+}
+
+async function onPlaybackStart () {
+  speedoUi.show()
+}
+
+async function onPlaybackStop () {
+  speedoUi.hide()
+}
+
+async function onPlaybackFrame (e) {
+  let dataFrame = await speedData.getFrame(e.frameIndex)
+  frameTimes.push(getTime())
+
   speedoUi.setState({
-    speed: Math.sqrt(x*x + y*y)
+    timecode: frameIndexToTimecodeString(e.frameIndex),
+    speed: dataFrame.speed,
+    maxSpeed: dataFrame.maxSpeed,
+    maxSpeedFrameIndex: dataFrame.maxSpeedFrameIndex,
+    fps: getFps()
   })
 }
 
@@ -46,8 +118,12 @@ export default class SpeedometerUi extends React.Component {
   constructor (props) {
     super(props)
     this.state = {
+      timecode: '',
       visible: false,
-      speed: 0
+      speed: 0,
+      maxSpeed: 0,
+      maxSpeedFrameIndex: 0,
+      fps: 0
     }
   }
 
@@ -69,7 +145,8 @@ export default class SpeedometerUi extends React.Component {
       fontSize: 14, 
       position: 'absolute', 
       top: '7px', 
-      right: '7px'
+      right: '7px',
+      background: 'rgba(255, 255, 255, 0.93)'
     }
 
     const pStyle = {
@@ -80,7 +157,10 @@ export default class SpeedometerUi extends React.Component {
 
     return (
       <div style={style}>
+        <p style={pStyle}>{Math.round(this.state.fps).toString()} fps</p>
+        <p style={pStyle}>{this.state.timecode}</p>
         <p style={pStyle}>{this.state.speed.toFixed(2)} ppf</p>
+        <p style={pStyle}>{this.state.maxSpeed.toFixed(2)} ppf @ {frameIndexToTimecodeString(this.state.maxSpeedFrameIndex)}</p>
       </div>
     )
   }
@@ -88,6 +168,24 @@ export default class SpeedometerUi extends React.Component {
 
 (async function () {
   speedoUi = await ui.createComponent(SpeedometerUi)
+  speedData = await track.createComputedData({ speed: 0, maxSpeed: 0, maxSpeedFrameIndex: 0 }, 
+    (frame, prevData) => {
+      const speed = getSpeed(frame)
+
+      let maxSpeedFrameIndex = prevData.maxSpeedFrameIndex
+      let maxSpeed = prevData.maxSpeed
+
+      if (speed >= maxSpeed) {
+        maxSpeed = speed
+        maxSpeedFrameIndex = frame.index
+      }
+
+      return {
+        speed: speed,
+        maxSpeed: maxSpeed,
+        maxSpeedFrameIndex: maxSpeedFrameIndex
+      }
+    })
 
   events.addListener('playbackStart', onPlaybackStart)
   events.addListener('playbackStop', onPlaybackStop)
